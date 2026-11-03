@@ -1,0 +1,128 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AdminUser {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String   @default("المسؤول العام")
+  password  String   // bcrypt encrypted hash
+  role      String   @default("SUPER_ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Workspace {
+  id                String       @id @default(uuid())
+  name              String
+  clientName        String
+  clientEmail       String?
+  clientPhone       String?
+  driveLetter       String       @default("C:")
+  color             String       @default("blue")
+  icon              String       @default("hard-drive")
+  description       String?
+  storageQuotaBytes BigInt       @default(10737418240) // 10 GB default
+  usedStorageBytes  BigInt       @default(0)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  folders           Folder[]
+  files             FileItem[]
+  shareLinks        ShareLink[]
+}
+
+model Folder {
+  id          String       @id @default(uuid())
+  workspaceId String
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Folder?      @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[]     @relation("FolderHierarchy")
+  name        String
+  path        String
+  color       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  files       FileItem[]
+  shareLinks  ShareLink[]
+
+  @@index([workspaceId, parentId])
+  @@index([path])
+}
+
+model FileItem {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folderId      String?
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  name          String
+  originalName  String
+  storageKey    String    @unique
+  size          BigInt
+  mimeType      String
+  extension     String
+  storageDriver String    @default("s3") // "s3" or "local"
+  metadata      String?   // JSON string
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, folderId])
+  @@index([name])
+}
+
+model ShareLink {
+  id                       String           @id @default(uuid())
+  token                    String           @unique
+  workspaceId              String
+  workspace                Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folderId                 String?          // null = Root / full workspace access; specific folderId = Subfolder isolation
+  folder                   Folder?          @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  title                    String
+  pinHash                  String           // Encrypted bcrypt hash
+  pinCode                  String           // 6-digit plain text for admin reference
+  allowDownload            Boolean          @default(true)
+  allowSubfolderNavigation Boolean          @default(true)
+  expiresAt                DateTime?
+  maxViews                 Int?
+  viewsCount               Int              @default(0)
+  isActive                 Boolean          @default(true)
+  lastAccessedAt           DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  accessLogs               ShareAccessLog[]
+
+  @@index([token])
+  @@index([workspaceId, folderId])
+}
+
+model ShareAccessLog {
+  id          String    @id @default(uuid())
+  shareLinkId String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  ipAddress   String?
+  userAgent   String?
+  status      String    // "SUCCESS", "WRONG_PIN", "EXPIRED"
+  createdAt   DateTime  @default(now())
+
+  @@index([shareLinkId])
+}
+
+model AuditActivity {
+  id          String   @id @default(uuid())
+  workspaceId String?
+  action      String
+  details     String?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId])
+}
