@@ -29,8 +29,10 @@ import {
   Clock,
   KeyRound,
   Download,
+  Search,
+  X,
 } from 'lucide-react';
-import { formatBytes, formatDate } from '@/lib/utils';
+import { formatBytes, formatDate, getWorkspaceColor } from '@/lib/utils';
 import { FileExplorer, FolderItem, FileItem } from '@/components/FileExplorer';
 import { FilePreviewModal } from '@/components/FilePreviewModal';
 import { UploadModal } from '@/components/UploadModal';
@@ -40,6 +42,8 @@ import { NewFolderModal } from '@/components/NewFolderModal';
 import { EditWorkspaceModal } from '@/components/EditWorkspaceModal';
 import { ChangeAdminProfileModal } from '@/components/ChangeAdminProfileModal';
 import { ShareLogsModal } from '@/components/ShareLogsModal';
+import { ConfirmationModal } from '@/components/ConfirmationModal';
+import { Toast } from '@/components/Toast';
 
 interface Workspace {
   id: string;
@@ -148,6 +152,22 @@ export default function AdminDashboardPage() {
   // Copied states
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [copiedPinToken, setCopiedPinToken] = useState<string | null>(null);
+
+  // Search clients query
+  const [workspaceSearch, setWorkspaceSearch] = useState('');
+
+  // Delete Share Link confirmation modal state
+  const [linkToDelete, setLinkToDelete] = useState<{ token: string; title: string } | null>(null);
+
+  // Toast notification state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 3500);
+  };
 
   // Authentication check on mount
   useEffect(() => {
@@ -274,9 +294,12 @@ export default function AdminDashboardPage() {
       if (data.success) {
         loadFolderContents(currentFolderId);
         fetchWorkspaces();
+        showToast('تم حذف المجلد بنجاح', 'success');
+      } else {
+        showToast(data.error || 'تعذر حذف المجلد', 'error');
       }
-    } catch (err) {
-      alert('تعذر حذف المجلد');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر حذف المجلد', 'error');
     }
   };
 
@@ -287,22 +310,29 @@ export default function AdminDashboardPage() {
       if (data.success) {
         loadFolderContents(currentFolderId);
         fetchWorkspaces();
+        showToast('تم حذف الملف بنجاح', 'success');
+      } else {
+        showToast(data.error || 'تعذر حذف الملف', 'error');
       }
-    } catch (err) {
-      alert('تعذر حذف الملف');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر حذف الملف', 'error');
     }
   };
 
   const handleDeleteShareLink = async (token: string) => {
-    if (!confirm('هل أنت متأكد من إلغاء وحذف رابط المشاركة هذا؟')) return;
     try {
       const res = await fetch(`/api/share/${token}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         fetchShareLinks();
+        showToast('تم حذف رابط المشاركة بنجاح', 'success');
+      } else {
+        showToast(data.error || 'تعذر حذف رابط المشاركة', 'error');
       }
-    } catch (err) {
-      alert('تعذر حذف رابط المشاركة');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر حذف رابط المشاركة', 'error');
+    } finally {
+      setLinkToDelete(null);
     }
   };
 
@@ -315,9 +345,11 @@ export default function AdminDashboardPage() {
     navigator.clipboard.writeText(text);
     if (type === 'url') {
       setCopiedToken(token);
+      showToast('تم نسخ رابط المشاركة بنجاح', 'success');
       setTimeout(() => setCopiedToken(null), 2000);
     } else {
       setCopiedPinToken(token);
+      showToast('تم نسخ رمز PIN بنجاح', 'success');
       setTimeout(() => setCopiedPinToken(null), 2000);
     }
   };
@@ -491,143 +523,195 @@ export default function AdminDashboardPage() {
         {activeTab === 'explorer' && (
           <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-[600px]">
             {/* Left Sidebar: Workspace Drives Switcher */}
-            <div className="w-full md:w-72 flex flex-col gap-4">
+            <div className="w-full md:w-80 flex flex-col gap-4">
               <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <HardDrive size={14} className="text-blue-400" />
-                    <span>أقراص ومساحات العملاء</span>
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <HardDrive size={15} className="text-blue-400" />
+                    <span>أقراص ومساحات العملاء ({workspaces.length})</span>
                   </h4>
                   <button
                     onClick={() => setIsNewWorkspaceModalOpen(true)}
-                    className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium"
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold transition-colors"
                   >
-                    <Plus size={13} />
+                    <Plus size={14} />
                     <span>إضافة</span>
                   </button>
                 </div>
 
-                <div className="space-y-2 max-h-56 md:max-h-[500px] overflow-y-auto pr-1">
-                  {workspaces.map((w) => {
-                    const isSelected = activeWorkspace?.id === w.id;
-                    const used = BigInt(w.usedStorageBytes || 0);
-                    const quota = BigInt(w.storageQuotaBytes || 1);
-                    const percent = Math.min(100, Number((used * BigInt(100)) / quota));
+                {/* Search Bar for Clients */}
+                <div className="relative mb-3">
+                  <input
+                    type="text"
+                    value={workspaceSearch}
+                    onChange={(e) => setWorkspaceSearch(e.target.value)}
+                    placeholder="بحث باسم العميل أو الشركة أو القرص..."
+                    className="w-full px-3 py-2 pr-8 text-xs bg-slate-950 border border-slate-700/80 hover:border-slate-600 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  {workspaceSearch && (
+                    <button
+                      onClick={() => setWorkspaceSearch('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
 
-                    return (
-                      <div
-                        key={w.id}
-                        onClick={() => {
-                          setActiveWorkspace(w);
-                          setCurrentFolderId(null);
-                        }}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600/15 border-blue-500/50 shadow-md'
-                            : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-800/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs font-mono">
-                              {w.driveLetter}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-slate-200 truncate">{w.name}</p>
-                              <p className="text-[10px] text-slate-500 truncate">{w.clientName}</p>
+                <div className="space-y-2.5 max-h-64 md:max-h-[500px] overflow-y-auto pr-1">
+                  {workspaces
+                    .filter((w) => {
+                      if (!workspaceSearch.trim()) return true;
+                      const q = workspaceSearch.toLowerCase().trim();
+                      return (
+                        w.name.toLowerCase().includes(q) ||
+                        (w.clientName && w.clientName.toLowerCase().includes(q)) ||
+                        w.driveLetter.toLowerCase().includes(q) ||
+                        (w.clientEmail && w.clientEmail.toLowerCase().includes(q))
+                      );
+                    })
+                    .map((w) => {
+                      const isSelected = activeWorkspace?.id === w.id;
+                      const used = BigInt(w.usedStorageBytes || 0);
+                      const quota = BigInt(w.storageQuotaBytes || 1);
+                      const percent = Math.min(100, Number((used * BigInt(100)) / quota));
+                      const theme = getWorkspaceColor(w.color);
+
+                      return (
+                        <div
+                          key={w.id}
+                          onClick={() => {
+                            setActiveWorkspace(w);
+                            setCurrentFolderId(null);
+                          }}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer relative overflow-hidden ${
+                            isSelected
+                              ? `${theme.selectedBg} ${theme.selectedBorder}`
+                              : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-800/50'
+                          }`}
+                        >
+                          {/* Colored Active Indicator strip */}
+                          {isSelected && (
+                            <div className={`absolute top-0 right-0 bottom-0 w-1 ${theme.dot}`} />
+                          )}
+
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span
+                                className={`w-8 h-8 rounded-xl flex items-center justify-center font-extrabold text-xs font-mono flex-shrink-0 ${theme.badge}`}
+                              >
+                                {w.driveLetter}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-100 truncate">
+                                  {w.clientName || w.name}
+                                </p>
+                                <p className="text-xs text-slate-400 font-medium truncate">
+                                  {w.name}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Quick Edit button on workspace card */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingWorkspace(w);
+                                setIsEditWorkspaceModalOpen(true);
+                              }}
+                              title="تعديل بيانات العميل أو حذف القرص"
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                          </div>
+
+                          {/* Storage usage bar */}
+                          <div className="mt-2 space-y-1">
+                            <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                              <span>{formatBytes(w.usedStorageBytes)}</span>
+                              <span>{formatBytes(w.storageQuotaBytes)}</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${theme.bar}`}
+                                style={{ width: `${percent}%` }}
+                              />
                             </div>
                           </div>
-
-                          {/* Quick Edit button on workspace card */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingWorkspace(w);
-                              setIsEditWorkspaceModalOpen(true);
-                            }}
-                            title="تعديل بيانات العميل أو حذف القرص"
-                            className="p-1 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded transition-colors"
-                          >
-                            <Edit3 size={13} />
-                          </button>
                         </div>
-
-                        {/* Storage usage bar */}
-                        <div className="mt-2 space-y-1">
-                          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                            <span>{formatBytes(w.usedStorageBytes)}</span>
-                            <span>{formatBytes(w.storageQuotaBytes)}</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 rounded-full"
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
 
               {/* Active Workspace Info Panel */}
-              {activeWorkspace && (
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h5 className="font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Users size={14} className="text-blue-400" />
-                      <span>بيانات العميل النشط</span>
-                    </h5>
-                    <button
-                      onClick={() => {
-                        setEditingWorkspace(activeWorkspace);
-                        setIsEditWorkspaceModalOpen(true);
-                      }}
-                      className="p-1 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded transition-colors"
-                      title="تعديل بيانات العميل"
-                    >
-                      <Edit3 size={13} />
-                    </button>
-                  </div>
-                  <div className="space-y-1.5 text-slate-400 text-[11px]">
-                    <p><span className="text-slate-500">العميل:</span> {activeWorkspace.clientName}</p>
-                    {activeWorkspace.clientEmail && (
-                      <p><span className="text-slate-500">البريد:</span> {activeWorkspace.clientEmail}</p>
-                    )}
-                    {activeWorkspace.clientPhone && (
-                      <p><span className="text-slate-500">الهاتف:</span> {activeWorkspace.clientPhone}</p>
-                    )}
-                    <p><span className="text-slate-500">القرص:</span> {activeWorkspace.driveLetter}</p>
-                  </div>
+              {activeWorkspace && (() => {
+                const activeTheme = getWorkspaceColor(activeWorkspace.color);
+                return (
+                  <div className={`p-4 rounded-2xl bg-slate-900/70 border ${activeTheme.border} text-xs space-y-3`}>
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-slate-200 flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${activeTheme.dot}`} />
+                        <span>بيانات العميل النشط</span>
+                      </h5>
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-bold font-mono ${activeTheme.badge}`}>
+                        القرص {activeWorkspace.driveLetter}
+                      </span>
+                    </div>
 
-                  {/* Action buttons: Edit Client & Delete Client */}
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setEditingWorkspace(activeWorkspace);
-                        setIsEditWorkspaceModalOpen(true);
-                      }}
-                      className="flex-1 py-1.5 px-2 text-[11px] font-semibold text-blue-300 bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 rounded-lg transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <Edit3 size={12} />
-                      <span>تعديل العميل</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingWorkspace(activeWorkspace);
-                        setIsEditWorkspaceModalOpen(true);
-                      }}
-                      className="py-1.5 px-3 text-[11px] font-semibold text-red-400 hover:text-white bg-red-950/40 hover:bg-red-600/80 border border-red-500/20 rounded-lg transition-colors flex items-center justify-center gap-1"
-                      title="حذف مساحة العمل والعميل"
-                    >
-                      <Trash2 size={12} />
-                      <span>حذف</span>
-                    </button>
+                    <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5 text-xs">
+                      <div>
+                        <span className="text-slate-500 text-[11px] block">اسم العميل:</span>
+                        <p className="text-sm font-bold text-slate-100">{activeWorkspace.clientName}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 text-[11px] block">اسم الشركة / المحفظة:</span>
+                        <p className="text-xs text-slate-300 font-semibold">{activeWorkspace.name}</p>
+                      </div>
+                      {activeWorkspace.clientEmail && (
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">البريد الإلكتروني:</span>
+                          <p className="text-xs text-slate-300 font-mono">{activeWorkspace.clientEmail}</p>
+                        </div>
+                      )}
+                      {activeWorkspace.clientPhone && (
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">رقم الهاتف:</span>
+                          <p className="text-xs text-slate-300 font-mono" dir="ltr">{activeWorkspace.clientPhone}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons: Edit Client & Delete Client */}
+                    <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingWorkspace(activeWorkspace);
+                          setIsEditWorkspaceModalOpen(true);
+                        }}
+                        className="flex-1 py-2 px-3 text-xs font-bold text-blue-300 bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <Edit3 size={13} />
+                        <span>تعديل العميل</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingWorkspace(activeWorkspace);
+                          setIsEditWorkspaceModalOpen(true);
+                        }}
+                        className="py-2 px-3 text-xs font-bold text-red-400 hover:text-white bg-red-950/40 hover:bg-red-600/80 border border-red-500/20 rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                        title="حذف مساحة العمل والعميل"
+                      >
+                        <Trash2 size={13} />
+                        <span>حذف</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Right: Full Interactive File Explorer Component */}
@@ -638,6 +722,7 @@ export default function AdminDashboardPage() {
                   workspaceName={activeWorkspace.name}
                   clientName={activeWorkspace.clientName}
                   driveLetter={activeWorkspace.driveLetter}
+                  color={activeWorkspace.color}
                   breadcrumbs={breadcrumbs}
                   folders={folders}
                   files={files}
@@ -845,7 +930,7 @@ export default function AdminDashboardPage() {
 
                               {/* Delete link */}
                               <button
-                                onClick={() => handleDeleteShareLink(link.token)}
+                                onClick={() => setLinkToDelete({ token: link.token, title: link.title })}
                                 title="إلغاء وحذف الرابط"
                                 className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
                               >
@@ -1149,6 +1234,30 @@ export default function AdminDashboardPage() {
         token={selectedLogToken}
         title={selectedLogTitle}
       />
+
+      {/* Styled Confirmation Modal for Share Link Deletion (No native browser alerts) */}
+      <ConfirmationModal
+        isOpen={Boolean(linkToDelete)}
+        onClose={() => setLinkToDelete(null)}
+        onConfirm={() => {
+          if (linkToDelete) {
+            handleDeleteShareLink(linkToDelete.token);
+          }
+        }}
+        title="تأكيد حذف رابط المشاركة"
+        message="هل أنت متأكد من رغبتك في إلغاء وحذف رابط المشاركة هذا نهائياً؟ سيتم حظر وصول أي زائر للرابط فوراً."
+        itemName={linkToDelete?.title}
+        confirmText="حذف الرابط"
+      />
+
+      {/* Floating Modern Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

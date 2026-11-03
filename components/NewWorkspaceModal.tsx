@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, HardDrive, Plus, Shield, Sparkles } from 'lucide-react';
+import { X, HardDrive, Plus, Shield, Sparkles, Check } from 'lucide-react';
 
 interface NewWorkspaceModalProps {
   isOpen: boolean;
@@ -191,12 +191,14 @@ export const NewWorkspaceModal: React.FC<NewWorkspaceModalProps> = ({
                   type="button"
                   key={c.name}
                   onClick={() => setColor(c.name)}
-                  className={`w-7 h-7 rounded-full ${c.bg} transition-all ${
+                  className={`w-8 h-8 rounded-full ${c.bg} transition-all flex items-center justify-center ${
                     color === c.name
-                      ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110'
-                      : 'opacity-70 hover:opacity-100'
+                      ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 shadow-lg'
+                      : 'opacity-60 hover:opacity-100 hover:scale-105'
                   }`}
-                />
+                >
+                  {color === c.name && <Check size={14} className="text-white" />}
+                </button>
               ))}
             </div>
           </div>

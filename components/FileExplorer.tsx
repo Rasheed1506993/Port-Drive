@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { formatBytes, formatDate } from '@/lib/utils';
 import { FileIcon } from './FileIcon';
+import { ConfirmationModal } from './ConfirmationModal';
 
 export interface FolderItem {
   id: string;
@@ -103,6 +104,21 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'folder' | 'file';
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const driveColors: Record<string, string> = {
+    blue: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+    emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    purple: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+    amber: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+    rose: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
+    indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
+  };
+  const activeDriveColor = driveColors[color] || driveColors.blue;
 
   // Filter items by search query
   const filteredFolders = useMemo(() => {
@@ -157,9 +173,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           <div className="flex-1 flex items-center px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs overflow-x-auto whitespace-nowrap scrollbar-none">
             {/* Root Icon / Drive Indicator */}
             {isAdmin ? (
-              <span className="flex items-center gap-1.5 font-bold text-blue-400 flex-shrink-0 ml-1">
-                <HardDrive size={14} />
-                <span>{driveLetter}</span>
+              <span className={`flex items-center gap-1.5 font-bold flex-shrink-0 ml-1 px-2 py-0.5 rounded-lg border text-xs ${activeDriveColor}`}>
+                <HardDrive size={13} />
+                <span>القرص ({driveLetter})</span>
               </span>
             ) : (
               <span className="flex items-center gap-1.5 font-bold text-blue-400 flex-shrink-0 ml-1">
@@ -354,9 +370,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                           {onDeleteFolder && (
                             <button
                               onClick={() => {
-                                if (confirm(`هل أنت متأكد من حذف المجلد "${folder.name}" وجميع محتوياته؟`)) {
-                                  onDeleteFolder(folder.id);
-                                }
+                                setDeleteTarget({
+                                  type: 'folder',
+                                  id: folder.id,
+                                  name: folder.name,
+                                });
                               }}
                               title="حذف المجلد"
                               className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700/80 rounded-lg transition-colors"
@@ -429,9 +447,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                         {isAdmin && onDeleteFile && (
                           <button
                             onClick={() => {
-                              if (confirm(`هل أنت متأكد من حذف الملف "${file.name}"؟`)) {
-                                onDeleteFile(file.id);
-                              }
+                              setDeleteTarget({
+                                type: 'file',
+                                id: file.id,
+                                name: file.name,
+                              });
                             }}
                             title="حذف الملف"
                             className="p-1 text-slate-300 hover:text-red-400 transition-colors"
@@ -494,9 +514,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                         {isAdmin && onDeleteFolder && (
                           <button
                             onClick={() => {
-                              if (confirm(`هل أنت متأكد من حذف المجلد "${folder.name}" وجميع محتوياته؟`)) {
-                                onDeleteFolder(folder.id);
-                              }
+                              setDeleteTarget({
+                                type: 'folder',
+                                id: folder.id,
+                                name: folder.name,
+                              });
                             }}
                             title="حذف المجلد"
                             className="p-1 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded transition-colors"
@@ -553,8 +575,14 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                         )}
                         {isAdmin && onDeleteFile && (
                           <button
-                            onClick={() => onDeleteFile(file.id)}
-                            title="حذف"
+                            onClick={() => {
+                              setDeleteTarget({
+                                type: 'file',
+                                id: file.id,
+                                name: file.name,
+                              });
+                            }}
+                            title="حذف الملف"
                             className="p-1 text-slate-400 hover:text-red-400"
                           >
                             <Trash2 size={14} />
@@ -585,6 +613,29 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           <span>Drive: {driveLetter}</span>
         </div>
       </div>
+
+      {/* Styled Confirmation Modal (No native browser popups) */}
+      <ConfirmationModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          if (deleteTarget.type === 'folder' && onDeleteFolder) {
+            onDeleteFolder(deleteTarget.id);
+          } else if (deleteTarget.type === 'file' && onDeleteFile) {
+            onDeleteFile(deleteTarget.id);
+          }
+          setDeleteTarget(null);
+        }}
+        title={deleteTarget?.type === 'folder' ? 'تأكيد حذف المجلد' : 'تأكيد حذف الملف'}
+        message={
+          deleteTarget?.type === 'folder'
+            ? `هل أنت متأكد من رغبتك في حذف المجلد وجميع الملفات والمجلدات الفرعية داخله نهائياً؟`
+            : `هل أنت متأكد من رغبتك في حذف هذا الملف نهائياً من مساحة التخزين؟`
+        }
+        itemName={deleteTarget?.name}
+        confirmText="حذف نهائي"
+      />
     </div>
   );
 };
